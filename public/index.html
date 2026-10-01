@@ -2,8 +2,8 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -65,130 +65,70 @@
   </script>
   <title>Racing game</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237c3aed'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
-  <!-- Tailwind, PRECOMPILED for this app (was cdn.tailwindcss.com's
-       in-browser engine plus an inline tailwind.config here). The config
-       moved to tailwind.config.js in the repo root; npm run build compiles
-       it to public/tailwind.css with Docker or Paketo on every image build, so the
-       stylesheet is regenerated from THIS commit's markup every deploy and
-       can never drift behind the code. ~7 KB of CSS instead of a ~400 KB
-       engine, and no flash of unstyled content.
-       Writing class names as whole literals is what keeps this working — a
-       class assembled from fragments at runtime (e.g. "bg-" + tone + "-500")
-       is invisible to the compiler. If you genuinely need runtime-generated
-       classes, swap this link for the platform-hosted engine instead:
-       <script src="/usernode-tailwind/v1/tailwind.js"></script> -->
+  <!-- Tailwind, PRECOMPILED for this app. npm run build compiles
+       tailwind.config.js + styles/tailwind-input.css to public/tailwind.css
+       on every image build, so the stylesheet is regenerated from THIS
+       commit's markup every deploy. Class names must be whole literals in
+       the source — a name assembled at runtime is invisible to the compiler. -->
   <link rel="stylesheet" href="/tailwind.css">
-  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path (the
-       handler in server.js serves it under a plain "node server.js"; the
-       platform's edge answers it everywhere else). Never vendor it and never
-       write a hostname in front of it.
-       It is NOT conditional on this app calling a bridge API: it is also how
-       the app ANSWERS the shell, so a scaffold without it is invisible to
-       anything that asks the frame a question. Offline launch is one of those.
-       Another is the page's colour: the bridge reports this document's opaque
-       ground to the shell (#1581), which is what makes the platform bar above
-       the app take the app's tone instead of the viewer's theme (#1945). This
-       scaffold paints a dark page (bg-zinc-950 on the body element), so
-       without this tag a brand-new app sits under a light bar. -->
+  <!-- The platform bridge, centrally hosted and loaded by RELATIVE path.
+       Not conditional on calling a bridge API: it is also how the app
+       ANSWERS the shell (offline launch, page colour reporting). -->
   <script src="/usernode-bridge/v1/bridge.js"></script>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen">
-  <main class="max-w-md mx-auto px-4 py-10 flex flex-col gap-6">
+<body class="bg-zinc-950 text-zinc-100 overflow-hidden select-none">
 
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <section class="rounded-2xl border border-violet-500/30 bg-gradient-to-b from-violet-600/20 to-transparent p-6 text-center flex flex-col items-center gap-3">
-      <span class="inline-block rounded-full bg-violet-600/20 text-violet-300 text-xs font-semibold uppercase tracking-wide px-3 py-1">Starter template</span>
+  <canvas id="game" class="fixed inset-0 w-full h-full touch-none"></canvas>
+
+  <!-- In-run HUD. Pointer-events off so a drag passes through to the canvas. -->
+  <div id="hud" class="fixed top-0 inset-x-0 flex justify-between items-start p-4 sm:p-6 pointer-events-none hidden">
+    <div class="rounded-xl bg-zinc-900/70 px-4 py-2">
+      <div class="text-xs uppercase tracking-wide text-zinc-500">Distance</div>
+      <div id="distance" class="text-xl font-semibold font-mono">0 m</div>
+    </div>
+    <div class="rounded-xl bg-zinc-900/70 px-4 py-2 text-right">
+      <div class="text-xs uppercase tracking-wide text-zinc-500">Speed</div>
+      <div class="text-xl font-semibold font-mono">86 km/h</div>
+    </div>
+  </div>
+
+  <!-- Start screen, shown until the first run begins. -->
+  <div id="start" class="fixed inset-0 flex items-center justify-center bg-zinc-950/60 p-4">
+    <div class="max-w-sm w-full flex flex-col items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/90 p-8 text-center">
       <h1 class="text-2xl font-bold">Racing game</h1>
-      <p class="text-sm text-zinc-300 leading-relaxed">Welcome to your new app! Everything on this screen is placeholder content that came with it.</p>
-      <p class="text-sm text-zinc-300 leading-relaxed">Tap <strong class="text-violet-300 font-semibold">Improve</strong> in the header, describe what you'd like in plain English, and it will be turned into your real app.</p>
-    </section>
+      <p id="start-msg" class="text-sm text-zinc-400 leading-relaxed">Drag left and right to steer. Dodge the traffic and stay on the road.</p>
+      <button id="start-btn" class="w-full rounded-xl bg-violet-600 hover:bg-violet-500 active:scale-95 transition-all px-5 py-3 font-semibold text-white">Start run</button>
+    </div>
+  </div>
 
-    <section>
-      <h2 class="text-sm font-medium text-zinc-500 mb-2 px-1">What's already working</h2>
-      <div class="rounded-xl border border-zinc-800 bg-zinc-900/60 divide-y divide-zinc-800">
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Sign-in</p>
-            <p class="text-sm text-zinc-400">You're signed in through Homeroom automatically — no accounts to build.</p>
-          </div>
+  <!-- Game-over screen after a collision. -->
+  <div id="over" class="fixed inset-0 hidden items-center justify-center bg-zinc-950/70 p-4">
+    <div class="max-w-sm w-full flex flex-col gap-5 rounded-2xl border border-zinc-800 bg-zinc-900/90 p-8">
+      <h2 class="text-2xl font-bold text-center">Crashed</h2>
+      <div class="flex justify-center gap-10">
+        <div class="text-center">
+          <div class="text-xs text-zinc-500">Run</div>
+          <div id="over-distance" class="text-xl font-semibold font-mono">0 m</div>
         </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Database</p>
-            <p class="text-sm text-zinc-400">Your app has its own private database, ready to store things.</p>
-          </div>
-        </div>
-        <div class="flex items-start gap-3 p-4">
-          <svg class="w-5 h-5 text-violet-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-          <div>
-            <p class="text-sm font-semibold text-zinc-100">Live API</p>
-            <p class="text-sm text-zinc-400">The example below talks to a real server — try it.</p>
-          </div>
+        <div class="text-center">
+          <div class="text-xs text-zinc-500">Best</div>
+          <div id="over-best" class="text-xl font-semibold font-mono">0 m</div>
         </div>
       </div>
-    </section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <section class="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 flex flex-col items-center gap-5">
-      <div class="w-full flex items-baseline justify-between gap-2">
-        <h2 class="text-sm font-medium text-zinc-500">Try the example</h2>
-        <span class="text-xs text-zinc-600">This example will be replaced</span>
+      <div>
+        <h3 class="text-xs font-medium text-zinc-500 mb-2">Top runs</h3>
+        <div id="board" class="space-y-1 text-sm"></div>
       </div>
+      <p id="signin-hint" class="hidden text-xs text-center text-zinc-500">Sign in through Homeroom to save your runs.</p>
+      <button id="restart-btn" class="rounded-xl bg-violet-600 hover:bg-violet-500 active:scale-95 transition-all px-5 py-3 font-semibold text-white">Restart</button>
+    </div>
+  </div>
 
-      <button id="press-btn" class="w-32 h-32 rounded-full bg-violet-600 hover:bg-violet-500 active:scale-95 transition-all text-white text-xl font-bold shadow-lg shadow-violet-600/30">
-        Press!
-      </button>
-
-      <div id="count" class="text-lg text-zinc-400">0 total presses</div>
-
-      <div class="w-full max-w-sm">
-        <h3 class="text-sm font-medium text-zinc-500 mb-2 text-center">Leaderboard</h3>
-        <div id="leaderboard" class="space-y-1"></div>
-      </div>
-    </section>
-
-    <p class="text-center text-xs text-zinc-600">Built on Homeroom — this template screen disappears once you build your real app.</p>
-  </main>
-
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
-    const headers = token ? { 'x-usernode-token': token } : {};
-
-    async function loadLeaderboard() {
-      const res = await fetch('/api/leaderboard', { headers });
-      if (!res.ok) return;
-      const { leaderboard } = await res.json();
-      const el = document.getElementById('leaderboard');
-      if (!leaderboard.length) {
-        el.innerHTML = '<p class="text-center text-zinc-600 text-sm">No presses yet</p>';
-        return;
-      }
-      el.innerHTML = leaderboard.map((r, i) =>
-        '<div class="flex justify-between px-3 py-1 rounded ' + (i === 0 ? 'bg-violet-600/20 text-violet-300' : 'text-zinc-400') + '">' +
-        '<span>' + (i + 1) + '. ' + r.username + '</span>' +
-        '<span class="font-mono">' + r.presses + '</span></div>'
-      ).join('');
-      const total = leaderboard.reduce((s, r) => s + parseInt(r.presses), 0);
-      document.getElementById('count').textContent = total + ' total presses';
-    }
-
-    document.getElementById('press-btn').addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/press', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
-        });
-        if (res.ok) loadLeaderboard();
-        else if (res.status === 401) document.getElementById('count').textContent = 'Sign in to press!';
-      } catch {}
-    });
-
-    loadLeaderboard();
+  <!-- Map the bare `three` import to the build the app server serves from
+       node_modules, then run the game as an ES module. -->
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.js" } }
   </script>
+  <script type="module" src="/game.js"></script>
 </body>
 </html>

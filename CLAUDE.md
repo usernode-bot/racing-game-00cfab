@@ -88,10 +88,12 @@ tables you've marked private), etc.
 
 ## About Racing game
 
-A 3d racing game where you drag your finger to move a steering wheel. Speed is fixed
-
-_(add a sentence or two more of product context here so Claude Code has a
-shared understanding of what this app is for)_
+A 3D racing game (Three.js, served from npm at `/vendor/three.module.js`)
+where you drag left and right to steer. Speed is fixed at 24 m/s and never
+changes — the challenge is dodging slower traffic and staying between the
+roadside barriers. Finished runs POST their distance to `/api/scores`; the
+`scores` table holds every run and the game-over screen shows a personal
+best plus the top five runs (best distance per username).
 
 ## App-specific conventions
 
