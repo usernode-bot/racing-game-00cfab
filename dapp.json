@@ -1,16 +1,17 @@
 {
-  "description": "A 3d racing game where you drag your finger to move a steering wheel. Speed is fixed",
+  "description": "A 3d racing game where you drag a thumb pad to steer and control your speed",
   "secrets": [],
   "tests": [
     {
       "id": "game.start-screen",
       "name": "Start screen shows",
       "path": "/",
-      "expectText": "Drag left and right to steer",
+      "expectText": "Drag the pad to steer",
       "visual": true,
       "impact": ["public/index.html", "public/game.js", "server.js"]
     },
     { "name": "Game canvas renders", "path": "/", "expectSelector": "canvas#game" },
+    { "name": "Control pad present", "path": "/", "expectSelector": "#pad" },
     { "name": "3D engine asset serves", "path": "/vendor/three.module.js" }
   ]
 }
