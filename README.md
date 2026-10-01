@@ -1,27 +1,28 @@
 # Racing game
 
-> **Starter template** — this repo was scaffolded by Homeroom Social
-> Vibecoding. Everything in it is placeholder example code until the
-> app's first real feature is built.
+A 3D racing game on Homeroom. The car drives at a fixed, constant speed;
+you steer by dragging left and right anywhere on the screen (arrow keys on
+a desktop). Dodge oncoming traffic, stay between the barriers, and see how
+far you get.
 
-The scaffold is a small working demo that proves the plumbing works:
+## How it works
 
-- **Sign-in** — the server verifies the platform-issued user token
-  (an RS256 JWT) on every request, so the app already knows who is
-  using it. No accounts to build.
-- **Database** — the app has its own private Postgres database; the
-  demo stores button presses in a `presses` table.
-- **Live API** — two example routes (`/api/press`,
-  `/api/leaderboard`) read and write through a real Express server.
-- **Styling** — Tailwind CSS, precompiled by `npm run build` during
-  image creation with either Kubernetes/Paketo or standalone Docker.
+- `public/game.js` runs the whole game as an ES module on
+  [Three.js](https://threejs.org), an npm dependency served by the app
+  server at `/vendor/three.module.js` (mapped to bare `three` via an
+  importmap in `public/index.html`).
+- Steering is a horizontal drag: distance dragged maps to steering angle,
+  the body yaws and leans with it, and releasing springs the wheel back
+  to center. The car is clamped between the roadside barriers.
+- Traffic cars spawn ahead in a random lane (never all three at once) and
+  drive the same way at a slower speed, so they drift toward you. Traffic
+  thickens the further you drive; speed never changes.
+- Hitting a car ends the run: the game-over screen shows your distance,
+  your best, and the top runs.
 
-## Replacing the template
+## Scores
 
-Open the app on Homeroom, tap **Improve** in the header, and describe
-the app you want in plain English — the template will be replaced with
-your real app. You can also run Claude Code against this repo directly;
-start with `CLAUDE.md`, which carries the app-specific notes and
-points at the platform rules.
-
-Once the real app exists, rewrite this README to describe it.
+Finished runs POST to `/api/scores`, which stores them in the `scores`
+table and answers with your personal best and the top five runs (best
+distance per username). Staging previews seed three obviously fake demo
+drivers so the leaderboard is never empty there.

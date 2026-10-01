@@ -7,6 +7,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// Staging containers exist to test a change safely: data work (seeding) is
+// keyed on this, never on a feature or code path.
+const IS_STAGING = process.env.USERNODE_ENV === 'staging';
+
 // The platform signs user-identity tokens with an RSA private key it never
 // shares. Containers get only the PUBLIC half, so this app can verify who a
 // user is but cannot mint an identity — and neither can any other app.
@@ -102,6 +106,17 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Three.js — the 3D engine the game runs on — ships as an npm dependency.
+// Serve its bundled ESM build at a stable path so public/game.js can import
+// it (the importmap in index.html maps `three` here). Its exports map hides
+// build files from require.resolve, so the filesystem path is built directly.
+// Revalidate on every load, like the hosted assets: an upgraded engine
+// version reaches players on the next deploy instead of sticking in caches.
+app.get('/vendor/three.module.js', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=0, must-revalidate');
+  res.sendFile(path.join(__dirname, 'node_modules', 'three', 'build', 'three.module.min.js'));
+});
+
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
 // /favicon.ico (older browsers, direct visits) doesn't fall through to
@@ -109,29 +124,46 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
-// Button press
-app.post('/api/press', async (req, res) => {
+// Save a finished run: stores the distance driven and answers with the
+// player's personal best plus the global top runs, which the game-over
+// screen shows.
+app.post('/api/scores', async (req, res) => {
   try {
-    await pool.query(`
-      INSERT INTO presses (user_id, username) VALUES ($1, $2)
-    `, [req.user.id, req.user.username]);
-    res.json({ ok: true });
+    const distance = Math.round(Number(req.body && req.body.distance));
+    if (!Number.isFinite(distance) || distance < 0 || distance > 10_000_000) {
+      return res.status(400).json({ error: 'Invalid distance' });
+    }
+    await pool.query(
+      'INSERT INTO scores (user_id, username, distance_m) VALUES ($1, $2, $3)',
+      [req.user.id, req.user.username, distance]
+    );
+    const [{ rows: top }, { rows: mine }] = await Promise.all([
+      pool.query(`
+        SELECT username, MAX(distance_m) AS distance
+        FROM scores
+        GROUP BY username
+        ORDER BY distance DESC, username
+        LIMIT 5
+      `),
+      pool.query('SELECT MAX(distance_m) AS best FROM scores WHERE user_id = $1', [req.user.id]),
+    ]);
+    res.json({ best: mine[0].best, top });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Leaderboard
-app.get('/api/leaderboard', async (_req, res) => {
+// Top runs across all players, best distance per username.
+app.get('/api/scores', async (_req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT username, COUNT(*) as presses
-      FROM presses
+      SELECT username, MAX(distance_m) AS distance
+      FROM scores
       GROUP BY username
-      ORDER BY presses DESC
-      LIMIT 50
+      ORDER BY distance DESC, username
+      LIMIT 5
     `);
-    res.json({ leaderboard: rows });
+    res.json({ top: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -176,16 +208,52 @@ app.get('*', (req, res) => {
 
 async function start() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS presses (
+    CREATE TABLE IF NOT EXISTS scores (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL,
       username VARCHAR(255) NOT NULL,
+      distance_m INTEGER NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Staging previews boot against a fresh copy of production, and the
+  // scores table does not exist there yet — the game-over leaderboard would
+  // always be empty. Seed a few obviously fake demo drivers (never real
+  // users, never the visitor) so a tester sees the leaderboard working.
+  if (IS_STAGING) {
+    await pool.query(`
+      INSERT INTO scores (id, user_id, username, distance_m) VALUES
+        (900001, -1, 'staging-demo-driver', 940),
+        (900002, -2, 'staging-demo-racer', 610),
+        (900003, -3, 'staging-demo-rookie', 320)
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
   const server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
+
+  // The runtime SIGTERMs the container on every deploy. Stop accepting
+  // connections, give in-flight requests a short drain, close the pool,
+  // exit. Idempotent: a second signal must not run teardown twice.
+  let shuttingDown = false;
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] ${signal} received, draining`);
+    server.close(() => {});
+    server.closeIdleConnections?.();
+    const kill = setTimeout(() => server.closeAllConnections?.(), 3000);
+    kill.unref?.();
+    try {
+      await pool.end();
+    } catch (err) {
+      console.error('[shutdown] pool.end failed: ' + err.message);
+    }
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 start().catch(err => { console.error(err); process.exit(1); });
