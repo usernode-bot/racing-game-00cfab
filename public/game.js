@@ -1,17 +1,23 @@
-// Racing game — a fixed-speed 3D driver.
+// Racing game — a 3D driver with a thumb pad.
 //
-// Steering is a horizontal drag: the further you drag from where you
-// pressed, the harder the car turns, and releasing lets the wheel spring
-// back to center. Arrow keys do the same on a desktop keyboard. The car
-// never speeds up or slows down; the whole game is keeping it between the
-// barriers while traffic comes the other way.
+// The pad in the dock along the bottom of the screen is the touchscreen
+// control: drag it left and right to steer, up to speed up and down to
+// slow down.
+// Releasing holds the speed you set and lets the wheel spring back to
+// center. Arrow keys do the same on a desktop keyboard, with up/down
+// nudging the speed. The whole game is keeping it between the barriers
+// while traffic comes the other way.
 
 import * as THREE from 'three';
 
 // ---------- DOM ----------
 const canvas = document.getElementById('game');
+const gameArea = document.getElementById('game-area');
 const hudEl = document.getElementById('hud');
 const distanceEl = document.getElementById('distance');
+const speedEl = document.getElementById('speed');
+const padEl = document.getElementById('pad');
+const padThumb = document.getElementById('pad-thumb');
 const startEl = document.getElementById('start');
 const startMsg = document.getElementById('start-msg');
 const startBtn = document.getElementById('start-btn');
@@ -23,7 +29,10 @@ const signinHint = document.getElementById('signin-hint');
 const restartBtn = document.getElementById('restart-btn');
 
 // ---------- Tuning (meters, seconds) ----------
-const SPEED = 24;              // fixed forward speed, never changes
+const SPEED_MIN = 10;          // slowest the car will go
+const SPEED_MAX = 38;          // fastest the car will go
+const CRUISE_SPEED = (SPEED_MIN + SPEED_MAX) / 2; // 24 m/s, the starting speed
+const KEY_SPEED_RATE = 16;     // keyboard up/down speed change, m/s per second
 const STEER_RATE = 11;         // lateral speed at full lock
 const ROAD_HALF = 4.5;         // road runs from -4.5 to +4.5
 const EDGE = ROAD_HALF - 0.85; // furthest the car's center may go
@@ -66,7 +75,6 @@ if (!renderer) {
 function boot() {
   // ---------- Renderer / scene ----------
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x09090b);
@@ -76,6 +84,17 @@ function boot() {
     62, window.innerWidth / window.innerHeight, 0.1, 400
   );
   camera.position.set(0, 4.4, 9.5);
+
+  // The view is the game area above the control dock, not the whole
+  // window, so the road shrinks above the dock instead of behind it.
+  function resizeView() {
+    const w = gameArea.clientWidth || window.innerWidth;
+    const h = gameArea.clientHeight || window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+  }
+  resizeView();
 
   scene.add(new THREE.HemisphereLight(0xc7c9e8, 0x27272a, 1.1));
   const sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -197,46 +216,74 @@ function boot() {
   }
 
   // ---------- Input ----------
-  let dragging = false;
-  let pointerId = null;
-  let dragStartX = 0;
-  let dragInput = 0;
-  const keys = { left: false, right: false };
+  // The thumb pad is the touchscreen control: horizontal offset from the
+  // press point steers, vertical offset sets the speed. Releasing holds
+  // the speed and springs the wheel back to center. Arrow keys do the
+  // same on a keyboard; up/down nudge the speed while held.
+  let padDragging = false;
+  let padPointerId = null;
+  let padStartX = 0;
+  let padStartY = 0;
+  let steerInput = 0;
+  let throttleInput = 0;
+  const keys = { left: false, right: false, up: false, down: false };
 
-  // Full lock at about a third of the narrower viewport of drag room.
-  const dragScale = () => Math.max(180, Math.min(window.innerWidth, 480) * 0.32);
+  // How far the knob travels from the press point before the input reads
+  // as full lock / full throttle.
+  const padTravel = () => Math.max(28, padEl.clientWidth / 2 - 26);
 
-  canvas.addEventListener('pointerdown', (e) => {
-    if (state !== 'playing' || dragging) return;
-    dragging = true;
-    pointerId = e.pointerId;
-    dragStartX = e.clientX;
-    dragInput = 0;
-    // Capture so a drag that leaves the canvas keeps steering. Can throw if
+  function moveThumb(dx, dy) {
+    const travel = padTravel();
+    const x = THREE.MathUtils.clamp(dx, -travel, travel);
+    const y = THREE.MathUtils.clamp(dy, -travel, travel);
+    padThumb.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+  }
+
+  padEl.addEventListener('pointerdown', (e) => {
+    if (state !== 'playing' || padDragging) return;
+    padDragging = true;
+    padPointerId = e.pointerId;
+    padStartX = e.clientX;
+    padStartY = e.clientY;
+    steerInput = 0;
+    throttleInput = 0;
+    // Capture so a drag that leaves the pad keeps steering. Can throw if
     // the pointer went inactive between down and capture — never worth
     // breaking the drag over.
-    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    try { padEl.setPointerCapture(e.pointerId); } catch {}
   });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!dragging || e.pointerId !== pointerId) return;
-    dragInput = THREE.MathUtils.clamp((e.clientX - dragStartX) / dragScale(), -1, 1);
+  padEl.addEventListener('pointermove', (e) => {
+    if (!padDragging || e.pointerId !== padPointerId) return;
+    const dx = e.clientX - padStartX;
+    const dy = e.clientY - padStartY;
+    steerInput = THREE.MathUtils.clamp(dx / padTravel(), -1, 1);
+    // Screen up is negative clientY, so flip the sign: dragging up means
+    // throttle up.
+    throttleInput = THREE.MathUtils.clamp(-dy / padTravel(), -1, 1);
+    moveThumb(dx, dy);
   });
-  const endDrag = (e) => {
-    if (!dragging || e.pointerId !== pointerId) return;
-    dragging = false;
-    dragInput = 0;
+  const endPad = (e) => {
+    if (!padDragging || e.pointerId !== padPointerId) return;
+    padDragging = false;
+    steerInput = 0;
+    throttleInput = 0;
+    moveThumb(0, 0);
   };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  padEl.addEventListener('pointerup', endPad);
+  padEl.addEventListener('pointercancel', endPad);
+  padEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') keys.left = true;
     if (e.key === 'ArrowRight') keys.right = true;
+    if (e.key === 'ArrowUp') keys.up = true;
+    if (e.key === 'ArrowDown') keys.down = true;
   });
   window.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowLeft') keys.left = false;
     if (e.key === 'ArrowRight') keys.right = false;
+    if (e.key === 'ArrowUp') keys.up = false;
+    if (e.key === 'ArrowDown') keys.down = false;
   });
 
   // ---------- Game state ----------
@@ -244,7 +291,8 @@ function boot() {
   let steer = 0;       // smoothed steering, -1 (left) .. 1 (right)
   let playerX = 0;
   let distance = 0;
-  let worldSpeed = 8;  // the actually-applied scroll speed, eased toward target
+  let runSpeed = CRUISE_SPEED; // the speed the player has set this run
+  let worldSpeed = 8;  // the actually-applied scroll speed, eased toward runSpeed
   let spawnTimer = 2.2;
   let best = Number(localStorage.getItem('racing.best') || 0);
 
@@ -256,11 +304,13 @@ function boot() {
     playerX = 0;
     steer = 0;
     distance = 0;
+    runSpeed = CRUISE_SPEED;
     spawnTimer = 2.2;
     state = 'playing';
     startEl.classList.add('hidden');
     overEl.classList.replace('flex', 'hidden');
     hudEl.classList.remove('hidden');
+    padEl.classList.remove('hidden');
   }
 
   startBtn.addEventListener('click', begin);
@@ -269,6 +319,7 @@ function boot() {
   function crash() {
     state = 'over';
     hudEl.classList.add('hidden');
+    padEl.classList.add('hidden');
     const d = Math.floor(distance);
     overDistanceEl.textContent = fmtM(d);
     if (d > best) {
@@ -323,28 +374,41 @@ function boot() {
 
   // ---------- Per-frame update ----------
   function step(dt) {
-    // The world eases between an idle crawl on the start screen, full speed
-    // in a run, and a halt after a crash.
-    const targetSpeed = state === 'playing' ? SPEED : state === 'ready' ? 8 : 0;
+    // While a run is on, the pad's vertical offset sets the speed directly
+    // and the arrow keys nudge it; releasing the pad holds what you set.
+    if (state === 'playing') {
+      if (padDragging) {
+        // Cruise sits at the pad's center; full travel spans min..max.
+        runSpeed = CRUISE_SPEED + throttleInput * (SPEED_MAX - SPEED_MIN) / 2;
+      } else {
+        if (keys.up) runSpeed = Math.min(SPEED_MAX, runSpeed + KEY_SPEED_RATE * dt);
+        if (keys.down) runSpeed = Math.max(SPEED_MIN, runSpeed - KEY_SPEED_RATE * dt);
+      }
+    }
+
+    // The world eases between an idle crawl on the start screen, the
+    // player's chosen speed in a run, and a halt after a crash.
+    const targetSpeed = state === 'playing' ? runSpeed : state === 'ready' ? 8 : 0;
     worldSpeed += (targetSpeed - worldSpeed) * Math.min(1, dt * 2.5);
 
-    // Steering: drag position or arrow keys set the target; the wheel
+    // Steering: pad position or arrow keys set the target; the wheel
     // eases toward it and springs back to center when released.
     let input = 0;
     if (state === 'playing') {
-      if (dragging) input = dragInput;
+      if (padDragging) input = steerInput;
       else input = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     }
     steer += (input - steer) * Math.min(1, dt * 9);
 
     if (state === 'playing') {
       playerX = THREE.MathUtils.clamp(playerX + steer * STEER_RATE * dt, -EDGE, EDGE);
-      distance += SPEED * dt;
+      distance += worldSpeed * dt;
       distanceEl.textContent = fmtM(distance);
+      speedEl.textContent = `${Math.round(worldSpeed * 3.6)} km/h`;
       spawnTimer -= dt;
       if (spawnTimer <= 0) {
         spawnCar();
-        // Traffic thickens the further you drive; speed stays fixed.
+        // Traffic thickens the further you drive.
         spawnTimer = Math.max(0.8, 1.7 - distance / 2500);
       }
     }
@@ -372,9 +436,11 @@ function boot() {
     for (const c of traffic) {
       if (!c.active) continue;
       // Traffic drives the same way but slower, so it drifts toward the
-      // player at the difference of the two speeds.
+      // player at the difference of the two speeds. Slowing below a car's
+      // own speed makes it pull away instead — recycle it once it falls
+      // back behind the fog line so it never clogs the pool.
       c.g.position.z += (worldSpeed - c.speed) * dt;
-      if (c.g.position.z > DESPAWN_Z) {
+      if (c.g.position.z > DESPAWN_Z || c.g.position.z < SPAWN_Z - 40) {
         c.active = false;
         c.g.visible = false;
         continue;
@@ -403,9 +469,5 @@ function boot() {
   }
   requestAnimationFrame(frame);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-  });
+  window.addEventListener('resize', resizeView);
 }

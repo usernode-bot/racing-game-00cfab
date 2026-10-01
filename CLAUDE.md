@@ -89,9 +89,11 @@ tables you've marked private), etc.
 ## About Racing game
 
 A 3D racing game (Three.js, served from npm at `/vendor/three.module.js`)
-where you drag left and right to steer. Speed is fixed at 24 m/s and never
-changes — the challenge is dodging slower traffic and staying between the
-roadside barriers. Finished runs POST their distance to `/api/scores`; the
+where you drag a thumb pad at the bottom-right of the screen: left/right
+steers, up/down sets the speed (10–38 m/s, cruise 24 m/s at the pad's
+center; releasing holds the speed). Arrow keys do the same on desktop.
+The challenge is dodging slower traffic and staying between the roadside
+barriers. Finished runs POST their distance to `/api/scores`; the
 `scores` table holds every run and the game-over screen shows a personal
 best plus the top five runs (best distance per username).
 
