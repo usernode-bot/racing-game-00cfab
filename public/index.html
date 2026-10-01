@@ -78,24 +78,34 @@
 </head>
 <body class="bg-zinc-950 text-zinc-100 overflow-hidden select-none">
 
-  <canvas id="game" class="fixed inset-0 w-full h-full touch-none"></canvas>
+  <!-- The screen is a column: the road fills everything above the control
+       dock, so the dock owns its own space and the game view shrinks to
+       fit above it rather than the pad overlaying the road. -->
+  <div class="fixed inset-0 flex flex-col">
+    <div id="game-area" class="relative flex-1 min-h-0">
+      <canvas id="game" class="absolute inset-0 w-full h-full touch-none"></canvas>
 
-  <!-- In-run HUD. Pointer-events off so a drag passes through to the canvas. -->
-  <div id="hud" class="fixed top-0 inset-x-0 flex justify-between items-start p-4 sm:p-6 pointer-events-none hidden">
-    <div class="rounded-xl bg-zinc-900/70 px-4 py-2">
-      <div class="text-xs uppercase tracking-wide text-zinc-500">Distance</div>
-      <div id="distance" class="text-xl font-semibold font-mono">0 m</div>
+      <!-- In-run HUD. Pointer-events off so a drag passes through to the canvas. -->
+      <div id="hud" class="absolute top-0 inset-x-0 flex justify-between items-start p-4 sm:p-6 pointer-events-none hidden">
+        <div class="rounded-xl bg-zinc-900/70 px-4 py-2">
+          <div class="text-xs uppercase tracking-wide text-zinc-500">Distance</div>
+          <div id="distance" class="text-xl font-semibold font-mono">0 m</div>
+        </div>
+        <div class="rounded-xl bg-zinc-900/70 px-4 py-2 text-right">
+          <div class="text-xs uppercase tracking-wide text-zinc-500">Speed</div>
+          <div id="speed" class="text-xl font-semibold font-mono">86 km/h</div>
+        </div>
+      </div>
     </div>
-    <div class="rounded-xl bg-zinc-900/70 px-4 py-2 text-right">
-      <div class="text-xs uppercase tracking-wide text-zinc-500">Speed</div>
-      <div id="speed" class="text-xl font-semibold font-mono">86 km/h</div>
-    </div>
-  </div>
 
-  <!-- Thumb pad: drag here to steer (left/right) and set speed (up/down).
-       Hidden until a run starts, like the HUD. -->
-  <div id="pad" class="fixed bottom-6 right-6 w-36 h-36 rounded-full bg-zinc-800/40 border border-zinc-600/50 touch-none hidden">
-    <div id="pad-thumb" class="absolute left-1/2 top-1/2 w-12 h-12 rounded-full bg-violet-500/70 border border-violet-300/60" style="transform:translate(-50%,-50%)"></div>
+    <!-- Control dock: drag the pad to steer (left/right) and set speed
+         (up/down), centered horizontally. Hidden until a run starts,
+         like the HUD. -->
+    <div id="dock" class="shrink-0 flex justify-center items-center border-t border-zinc-800 bg-zinc-950 py-5">
+      <div id="pad" class="relative w-36 h-36 rounded-full bg-zinc-800/40 border border-zinc-600/50 touch-none hidden">
+        <div id="pad-thumb" class="absolute left-1/2 top-1/2 w-12 h-12 rounded-full bg-violet-500/70 border border-violet-300/60" style="transform:translate(-50%,-50%)"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Start screen, shown until the first run begins. -->

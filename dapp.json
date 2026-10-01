@@ -11,7 +11,7 @@
       "impact": ["public/index.html", "public/game.js", "server.js"]
     },
     { "name": "Game canvas renders", "path": "/", "expectSelector": "canvas#game" },
-    { "name": "Control pad present", "path": "/", "expectSelector": "#pad" },
+    { "name": "Control pad sits in the bottom dock", "path": "/", "expectSelector": "#dock #pad" },
     { "name": "3D engine asset serves", "path": "/vendor/three.module.js" }
   ]
 }

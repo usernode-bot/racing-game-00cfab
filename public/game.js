@@ -1,7 +1,8 @@
 // Racing game — a 3D driver with a thumb pad.
 //
-// The pad at the bottom-right of the screen is the touchscreen control:
-// drag it left and right to steer, up to speed up and down to slow down.
+// The pad in the dock along the bottom of the screen is the touchscreen
+// control: drag it left and right to steer, up to speed up and down to
+// slow down.
 // Releasing holds the speed you set and lets the wheel spring back to
 // center. Arrow keys do the same on a desktop keyboard, with up/down
 // nudging the speed. The whole game is keeping it between the barriers
@@ -11,6 +12,7 @@ import * as THREE from 'three';
 
 // ---------- DOM ----------
 const canvas = document.getElementById('game');
+const gameArea = document.getElementById('game-area');
 const hudEl = document.getElementById('hud');
 const distanceEl = document.getElementById('distance');
 const speedEl = document.getElementById('speed');
@@ -73,7 +75,6 @@ if (!renderer) {
 function boot() {
   // ---------- Renderer / scene ----------
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x09090b);
@@ -83,6 +84,17 @@ function boot() {
     62, window.innerWidth / window.innerHeight, 0.1, 400
   );
   camera.position.set(0, 4.4, 9.5);
+
+  // The view is the game area above the control dock, not the whole
+  // window, so the road shrinks above the dock instead of behind it.
+  function resizeView() {
+    const w = gameArea.clientWidth || window.innerWidth;
+    const h = gameArea.clientHeight || window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+  }
+  resizeView();
 
   scene.add(new THREE.HemisphereLight(0xc7c9e8, 0x27272a, 1.1));
   const sun = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -457,9 +469,5 @@ function boot() {
   }
   requestAnimationFrame(frame);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-  });
+  window.addEventListener('resize', resizeView);
 }
