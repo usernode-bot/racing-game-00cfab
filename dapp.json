@@ -12,5 +12,9 @@
     },
     { "name": "Game canvas renders", "path": "/", "expectSelector": "canvas#game" },
     { "name": "3D engine asset serves", "path": "/vendor/three.module.js" }
-  ]
+  ],
+  "icon": {
+    "image": "brand/icon.png",
+    "emoji": "🏁"
+  }
 }
